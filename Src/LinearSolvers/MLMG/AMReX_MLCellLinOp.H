@@ -1437,7 +1437,7 @@ MLCellLinOpT<MF>::compGrad (int amrlev, const Array<MF*,AMREX_SPACEDIM>& grad,
         {
             gy(i,j,k,n) = dyi*(s(i,j,k,n) - s(i,j-1,k,n));
             if (coord == CoordSys::SPHERICAL) {
-                rinv = RT(1.0) / (problo[0] + (i + RT(0.5)) * dx[0]);
+                RT rinv = RT(1.0) / (problo[0] + (i + RT(0.5)) * dx[0]);
                 gy(i,j,k,n) *= rinv;
             }
         });
