@@ -441,7 +441,7 @@ public:
     }
 
     //! apply metric terms if there are any
-    virtual void applyMetricTerm (int /*amrlev*/, int /*mglev*/, MF& /*rhs*/) const {}
+    virtual void applyMetricTerm (int /*amrlev*/, int /*mglev*/, MF& /*rhs*/, int /*dir*/) const {}
     //! unapply metric terms if there are any
     virtual void unapplyMetricTerm (int /*amrlev*/, int /*mglev*/, MF& /*rhs*/) const {}
 

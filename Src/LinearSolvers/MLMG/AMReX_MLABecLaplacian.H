@@ -450,7 +450,7 @@ MLABecLaplacianT<MF>::applyMetricTermsCoeffs ()
         this->applyMetricTerm(alev, mglev, m_a_coeffs[alev][mglev]);
         for (int idim = 0; idim < AMREX_SPACEDIM; ++idim)
         {
-            this->applyMetricTerm(alev, mglev, m_b_coeffs[alev][mglev][idim]);
+            this->applyMetricTerm(alev, mglev, m_b_coeffs[alev][mglev][idim], idim);
         }
     }
 #endif

@@ -102,7 +102,7 @@ public:
     void compGrad (int amrlev, const Array<MF*,AMREX_SPACEDIM>& grad,
                            MF& sol, Location loc) const override;
 
-    void applyMetricTerm (int amrlev, int mglev, MF& rhs) const final;
+    void applyMetricTerm (int amrlev, int mglev, MF& rhs, int dir=0) const final;
     void unapplyMetricTerm (int amrlev, int mglev, MF& rhs) const final;
     Vector<RT> getSolvabilityOffset (int amrlev, int mglev,
                                              MF const& rhs) const override;
@@ -1404,9 +1404,17 @@ MLCellLinOpT<MF>::compGrad (int amrlev, const Array<MF*,AMREX_SPACEDIM>& grad,
 
     const int ncomp = this->getNComp();
 
-    AMREX_D_TERM(const RT dxi = static_cast<RT>(this->m_geom[amrlev][mglev].InvCellSize(0));,
-                 const RT dyi = static_cast<RT>(this->m_geom[amrlev][mglev].InvCellSize(1));,
-                 const RT dzi = static_cast<RT>(this->m_geom[amrlev][mglev].InvCellSize(2)););
+    const Geometry& geom = this->m_geom[amrlev][mglev];
+    AMREX_D_TERM(const RT dxi = static_cast<RT>(geom.InvCellSize(0));,
+                 const RT dyi = static_cast<RT>(geom.InvCellSize(1));,
+                 const RT dzi = static_cast<RT>(geom.InvCellSize(2)););
+
+#if (AMREX_SPACEDIM >= 2)
+    const RT* problo = geom.ProbLo();
+    const RT* dx = geom.CellSize();
+    const int coord = geom.Coord();
+#endif
+
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
 #endif
@@ -1428,6 +1436,10 @@ MLCellLinOpT<MF>::compGrad (int amrlev, const Array<MF*,AMREX_SPACEDIM>& grad,
         AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( ybx, ncomp, i, j, k, n,
         {
             gy(i,j,k,n) = dyi*(s(i,j,k,n) - s(i,j-1,k,n));
+            if (coord == CoordSys::SPHERICAL) {
+                rinv = RT(1.0) / (problo[0] + (i + RT(0.5)) * dx[0]);
+                gy(i,j,k,n) *= rinv;
+            }
         });
 #endif
 #if (AMREX_SPACEDIM == 3)
@@ -1443,19 +1455,20 @@ MLCellLinOpT<MF>::compGrad (int amrlev, const Array<MF*,AMREX_SPACEDIM>& grad,
 
 template <typename MF>
 void
-MLCellLinOpT<MF>::applyMetricTerm (int amrlev, int mglev, MF& rhs) const
+MLCellLinOpT<MF>::applyMetricTerm (int amrlev, int mglev, MF& rhs, int dir) const
 {
-    amrex::ignore_unused(amrlev,mglev,rhs);
+    amrex::ignore_unused(amrlev,mglev,rhs,dir);
 #if (AMREX_SPACEDIM != 3)
     if (!m_has_metric_term) { return; }
 
     const int ncomp = rhs.nComp();
 
-    bool cc = rhs.ixType().cellCentered(0);
+    bool cc = rhs.ixType().cellCentered();
 
     const Geometry& geom = this->m_geom[amrlev][mglev];
-    const RT dx = static_cast<RT>(geom.CellSize(0));
-    const RT probxlo = static_cast<RT>(geom.ProbLo(0));
+    const RT* problo = geom.ProbLo();
+    const RT* dx = geom.CellSize();
+    const int coord = geom.Coord();
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
@@ -1468,29 +1481,63 @@ MLCellLinOpT<MF>::applyMetricTerm (int amrlev, int mglev, MF& rhs) const
         if (cc) {
             AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
             {
-                RT rc = probxlo + (i+RT(0.5))*dx;
+                RT rc = problo[0] + (i+RT(0.5))*dx[0];
                 rhsarr(i,j,k,n) *= rc*rc;
             });
         } else {
             AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
             {
-                RT re = probxlo + i*dx;
+                RT re = problo[0] + i*dx[0];
                 rhsarr(i,j,k,n) *= re*re;
             });
         }
 #elif (AMREX_SPACEDIM == 2)
-        if (cc) {
-            AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
-            {
-                RT rc = probxlo + (i+RT(0.5))*dx;
-                rhsarr(i,j,k,n) *= rc;
-            });
+        if (coord == CoordSys::RZ){
+            if (cc) {
+                AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
+                                                    {
+                                                        RT rc = problo[0] + (i+RT(0.5))*dx[0];
+                                                        rhsarr(i,j,k,n) *= rc;
+                                                    });
+            } else {
+                AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
+                                                    {
+                                                        RT re = problo[0] + i*dx[0];
+                                                        rhsarr(i,j,k,n) *= re;
+                                                    });
+            }
         } else {
-            AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
-            {
-                RT re = probxlo + i*dx;
-                rhsarr(i,j,k,n) *= re;
-            });
+            if (dir == 0) {
+                if (cc) {
+                    AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
+                                                        {
+                                                            RT rc = problo[0] + (i+RT(0.5))*dx[0];
+                                                            RT thetac = problo[1] + (j+RT(0.5))*dx[1];
+                                                            rhsarr(i,j,k,n) *= rc*rc*std::sin(thetac);
+                                                        });
+                } else {
+                    AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
+                                                        {
+                                                            RT re = problo[0] + i*dx[0];
+                                                            RT thetae = problo[1] + j*dx[1];
+                                                            rhsarr(i,j,k,n) *= re*re*std::sin(thetae);
+                                                        });
+                }
+            } else {
+                if (cc) {
+                    AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
+                                                        {
+                                                            RT thetac = problo[1] + (j+RT(0.5))*dx[1];
+                                                            rhsarr(i,j,k,n) *= std::sin(thetac);
+                                                        });
+                } else {
+                    AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
+                                                        {
+                                                            RT thetae = problo[1] + j*dx[1];
+                                                            rhsarr(i,j,k,n) *= std::sin(thetae);
+                                                        });
+                }
+            }
         }
 #endif
     }
@@ -1507,11 +1554,12 @@ MLCellLinOpT<MF>::unapplyMetricTerm (int amrlev, int mglev, MF& rhs) const
 
     const int ncomp = rhs.nComp();
 
-    bool cc = rhs.ixType().cellCentered(0);
+    bool cc = rhs.ixType().cellCentered();
 
     const Geometry& geom = this->m_geom[amrlev][mglev];
-    const RT dx = static_cast<RT>(geom.CellSize(0));
-    const RT probxlo = static_cast<RT>(geom.ProbLo(0));
+    const RT* problo = geom.ProbLo();
+    const RT* dx = geom.CellSize();
+    const int coord = geom.Coord();
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
@@ -1524,31 +1572,52 @@ MLCellLinOpT<MF>::unapplyMetricTerm (int amrlev, int mglev, MF& rhs) const
         if (cc) {
             AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
             {
-                RT rcinv = RT(1.0)/(probxlo + (i+RT(0.5))*dx);
+                RT rcinv = RT(1.0)/(problo[0] + (i+RT(0.5))*dx[0]);
                 rhsarr(i,j,k,n) *= rcinv*rcinv;
             });
         } else {
             AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
             {
-                RT re = probxlo + i*dx;
+                RT re = problo[0] + i*dx[0];
                 RT reinv = (re==RT(0.0)) ? RT(0.0) : RT(1.)/re;
                 rhsarr(i,j,k,n) *= reinv*reinv;
             });
         }
 #elif (AMREX_SPACEDIM == 2)
-        if (cc) {
-            AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
-            {
-                RT rcinv = RT(1.0)/(probxlo + (i+RT(0.5))*dx);
-                rhsarr(i,j,k,n) *= rcinv;
-            });
+        if (coord == CoordSys::RZ){
+            if (cc) {
+                AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
+                                                    {
+                                                        RT rcinv = RT(1.0)/(problo[0] + (i+RT(0.5))*dx[0]);
+                                                        rhsarr(i,j,k,n) *= rcinv;
+                                                    });
+            } else {
+                AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
+                                                    {
+                                                        RT re = problo[0] + i*dx[0];
+                                                        RT reinv = (re==RT(0.0)) ? RT(0.0) : RT(1.)/re;
+                                                        rhsarr(i,j,k,n) *= reinv;
+                                                    });
+            }
         } else {
-            AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
-            {
-                RT re = probxlo + i*dx;
-                RT reinv = (re==RT(0.0)) ? RT(0.0) : RT(1.)/re;
-                rhsarr(i,j,k,n) *= reinv;
-            });
+            if (cc) {
+                AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
+                                                    {
+                                                        RT rcinv = RT(1.0)/(problo[0] + (i+RT(0.5))*dx[0]);
+                                                        RT sinc = std::sin(problo[1] + (j+RT(0.5))*dx[1]);
+                                                        RT sincinv = (sinc==RT(0.0)) ? RT(0.0) : RT(1.)/sinc;
+                                                        rhsarr(i,j,k,n) *= rcinv * rcinv * sincinv;
+                                                    });
+            } else {
+                AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( tbx, ncomp, i, j, k, n,
+                                                    {
+                                                        RT re = problo[0] + i*dx[0];
+                                                        RT reinv = (re==RT(0.0)) ? RT(0.0) : RT(1.)/re;
+                                                        RT sine = std::sin(problo[1] + j*dx[1]);
+                                                        RT sineinv = (sine==RT(0.0)) ? RT(0.0) : RT(1.)/sine;
+                                                        rhsarr(i,j,k,n) *= reinv * reinv * sineinv;
+                                                    });
+            }
         }
 #endif
     }
