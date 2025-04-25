@@ -225,11 +225,13 @@ getErrorNorms(Vector<Real>& a_norms, //one for each comp
       std::cerr << "level = " << iLevel << "  Ref_Ratio = " << refine_ratio
                 << std::endl;
 
-    BoxArray ba2Coarse(ba2);
+    const DistributionMapping& dm2(ba2);
+
+    BoxArray ba2Coarse = ba2;
     ba2Coarse.coarsen(refine_ratio);
+    DistributionMapping dm2Coarse(ba2Coarse);
 
     // Define new_data1 in case the boxarrays are not the same
-    DistributionMapping dm2Coarse(ba2Coarse);
     MultiFab new_data1(ba2Coarse,dm2Coarse, 1,0);
 
     //
@@ -237,6 +239,19 @@ getErrorNorms(Vector<Real>& a_norms, //one for each comp
     //
     error[iLevel] = new MultiFab(ba2Coarse, dm2Coarse, nComp, 0);
     error[iLevel]->setVal(GARBAGE);
+
+    //
+    // Find geometry of the fine and coarse grids to find cell volume
+    // This is used to do volume weighting during average down.
+    //
+
+    const Geometry& cgeom = amrData1.Geom(iLevel);
+    const Geometry& fgeom = amrData2.Geom(iLevel);
+
+    MultiFab fvolume;
+    MultiFab cvolume;
+    fgeom.GetVolume(fvolume, ba2, dm2, 0);
+    cgeom.GetVolume(cvolume, ba2Coarse, dm2Coarse, 0);
 
     //
     // For each component, average the fine fields down and calculate
@@ -275,16 +290,34 @@ getErrorNorms(Vector<Real>& a_norms, //one for each comp
         FArrayBox data2Coarse(bx, 1);
         int ncCoarse = 1;
 
+        //
+        // Average down data in fine grid to coarse grid with volume weighting
+        //
+
+        FORT_AVGDOWN(data2Coarse.dataPtr(),
+                     AMREX_ARLIM(bx.loVect()), AMREX_ARLIM(bx.hiVect()),
+                     &ncCoarse,
+                     data2Fine[mfi].dataPtr(),
+                     AMREX_ARLIM(data2Fine[mfi].loVect()),
+                     AMREX_ARLIM(data2Fine[mfi].hiVect()),
+                     cvolume.dataPtr(),
+                     AMREX_ARLIM(cvolume[mfi].loVect()),
+                     AMREX_ARLIM(cvolume[mfi].hiVect()),
+                     fvolume.dataPtr(),
+                     AMREX_ARLIM(fvolume[mfi].loVect()),
+                     AMREX_ARLIM(fvolume[mfi].hiVect()),
+                     bx.loVect(), bx.hiVect(),
+                     refine_ratio.getVect());
 
 
-        FORT_CV_AVGDOWN(data2Coarse.dataPtr(),
-                        AMREX_ARLIM(bx.loVect()), AMREX_ARLIM(bx.hiVect()),
-                        &ncCoarse,
-                        data2Fine[mfi].dataPtr(),
-                        AMREX_ARLIM(data2Fine[mfi].loVect()),
-                        AMREX_ARLIM(data2Fine[mfi].hiVect()),
-                        bx.loVect(), bx.hiVect(),
-                        refine_ratio.getVect());
+        // FORT_CV_AVGDOWN(data2Coarse.dataPtr(),
+        //                 AMREX_ARLIM(bx.loVect()), AMREX_ARLIM(bx.hiVect()),
+        //                 &ncCoarse,
+        //                 data2Fine[mfi].dataPtr(),
+        //                 AMREX_ARLIM(data2Fine[mfi].loVect()),
+        //                 AMREX_ARLIM(data2Fine[mfi].hiVect()),
+        //                 bx.loVect(), bx.hiVect(),
+        //                 refine_ratio.getVect());
 
 
         //
@@ -293,6 +326,17 @@ getErrorNorms(Vector<Real>& a_norms, //one for each comp
 
         (*error[iLevel])[mfi].copy(new_data1[mfi], 0, iComp, 1);
         (*error[iLevel])[mfi].minus(data2Coarse  , 0, iComp, 1);
+
+        //
+        // Multiply error by volume for weighting but needs to be sqrt for l2 norm,
+        // since l2 norm does sum(err * err). But we want sum(dV * err * err)
+        // For L1 norm its fine to just multiply.
+        //
+
+        if (norm != 0)
+        {
+            (*error[iLevel])[mfi].mult(cvolume  , 0, iComp, 1);
+        }
 
         if (iLevel<finestLevel)
         {
@@ -357,9 +401,9 @@ getErrorNorms(Vector<Real>& a_norms, //one for each comp
 #endif
 
 
-    Real vol = 1.0;
-    for (int dir = 0; dir < BL_SPACEDIM; dir++)
-      vol *= amrData1.DxLevel()[iLevel][dir];
+    // Real vol = 1.0;
+    // for (int dir = 0; dir < BL_SPACEDIM; dir++)
+    //   vol *= amrData1.DxLevel()[iLevel][dir];
 
     if (ParallelDescriptor::IOProcessor())
     {
@@ -367,7 +411,7 @@ getErrorNorms(Vector<Real>& a_norms, //one for each comp
       {
         if (norm != 0)
         {
-          norms[iComp] = norms[iComp] * vol;
+          // norms[iComp] = norms[iComp] * vol;
           norms[iComp] = pow(norms[iComp], (1.0/norm));
         }
 
