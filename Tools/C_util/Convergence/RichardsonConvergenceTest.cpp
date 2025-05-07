@@ -299,30 +299,30 @@ getErrorNorms(Vector<Real>& a_norms, //one for each comp
         // Average down data in fine grid to coarse grid with volume weighting
         //
 
-        // FORT_AVGDOWN(data2Coarse.dataPtr(),
-        //              AMREX_ARLIM(bx.loVect()), AMREX_ARLIM(bx.hiVect()),
-        //              &ncCoarse,
-        //              data2Fine[mfi].dataPtr(),
-        //              AMREX_ARLIM(data2Fine[mfi].loVect()),
-        //              AMREX_ARLIM(data2Fine[mfi].hiVect()),
-        //              cvolume[mfi].dataPtr(),
-        //              AMREX_ARLIM(cvolume[mfi].loVect()),
-        //              AMREX_ARLIM(cvolume[mfi].hiVect()),
-        //              fvolume[mfi].dataPtr(),
-        //              AMREX_ARLIM(fvolume[mfi].loVect()),
-        //              AMREX_ARLIM(fvolume[mfi].hiVect()),
-        //              bx.loVect(), bx.hiVect(),
-        //              refine_ratio.getVect());
+        FORT_AVGDOWN(data2Coarse.dataPtr(),
+                     AMREX_ARLIM(bx.loVect()), AMREX_ARLIM(bx.hiVect()),
+                     &ncCoarse,
+                     data2Fine[mfi].dataPtr(),
+                     AMREX_ARLIM(data2Fine[mfi].loVect()),
+                     AMREX_ARLIM(data2Fine[mfi].hiVect()),
+                     cvolume[mfi].dataPtr(),
+                     AMREX_ARLIM(cvolume[mfi].loVect()),
+                     AMREX_ARLIM(cvolume[mfi].hiVect()),
+                     fvolume[mfi].dataPtr(),
+                     AMREX_ARLIM(fvolume[mfi].loVect()),
+                     AMREX_ARLIM(fvolume[mfi].hiVect()),
+                     bx.loVect(), bx.hiVect(),
+                     refine_ratio.getVect());
 
 
-        FORT_CV_AVGDOWN(data2Coarse.dataPtr(),
-                        AMREX_ARLIM(bx.loVect()), AMREX_ARLIM(bx.hiVect()),
-                        &ncCoarse,
-                        data2Fine[mfi].dataPtr(),
-                        AMREX_ARLIM(data2Fine[mfi].loVect()),
-                        AMREX_ARLIM(data2Fine[mfi].hiVect()),
-                        bx.loVect(), bx.hiVect(),
-                        refine_ratio.getVect());
+        // FORT_CV_AVGDOWN(data2Coarse.dataPtr(),
+        //                 AMREX_ARLIM(bx.loVect()), AMREX_ARLIM(bx.hiVect()),
+        //                 &ncCoarse,
+        //                 data2Fine[mfi].dataPtr(),
+        //                 AMREX_ARLIM(data2Fine[mfi].loVect()),
+        //                 AMREX_ARLIM(data2Fine[mfi].hiVect()),
+        //                 bx.loVect(), bx.hiVect(),
+        //                 refine_ratio.getVect());
 
 
         //
