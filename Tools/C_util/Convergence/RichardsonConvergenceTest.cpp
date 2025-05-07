@@ -225,7 +225,7 @@ getErrorNorms(Vector<Real>& a_norms, //one for each comp
       std::cerr << "level = " << iLevel << "  Ref_Ratio = " << refine_ratio
                 << std::endl;
 
-    const DistributionMapping& dm2(ba2);
+    DistributionMapping dm2(ba2);
 
     BoxArray ba2Coarse = ba2;
     ba2Coarse.coarsen(refine_ratio);
@@ -241,12 +241,17 @@ getErrorNorms(Vector<Real>& a_norms, //one for each comp
     error[iLevel]->setVal(GARBAGE);
 
     //
-    // Find geometry of the fine and coarse grids to find cell volume
+    // Create geometry of the fine and coarse grids to find cell volume
     // This is used to do volume weighting during average down.
     //
 
-    const Geometry& cgeom = amrData1.Geom(iLevel);
-    const Geometry& fgeom = amrData2.Geom(iLevel);
+    const int coord = amrData1.CoordSys();
+
+    RealBox cRealBox(amrData1.ProbHi().data(), amrData1.ProbLo().data());
+    RealBox fRealBox(amrData2.ProbHi().data(), amrData2.ProbLo().data());
+
+    Geometry cgeom(domain1, &cRealBox, coord);
+    Geometry fgeom(domain2, &fRealBox, coord);
 
     MultiFab fvolume;
     MultiFab cvolume;
@@ -294,30 +299,30 @@ getErrorNorms(Vector<Real>& a_norms, //one for each comp
         // Average down data in fine grid to coarse grid with volume weighting
         //
 
-        FORT_AVGDOWN(data2Coarse.dataPtr(),
-                     AMREX_ARLIM(bx.loVect()), AMREX_ARLIM(bx.hiVect()),
-                     &ncCoarse,
-                     data2Fine[mfi].dataPtr(),
-                     AMREX_ARLIM(data2Fine[mfi].loVect()),
-                     AMREX_ARLIM(data2Fine[mfi].hiVect()),
-                     cvolume.dataPtr(),
-                     AMREX_ARLIM(cvolume[mfi].loVect()),
-                     AMREX_ARLIM(cvolume[mfi].hiVect()),
-                     fvolume.dataPtr(),
-                     AMREX_ARLIM(fvolume[mfi].loVect()),
-                     AMREX_ARLIM(fvolume[mfi].hiVect()),
-                     bx.loVect(), bx.hiVect(),
-                     refine_ratio.getVect());
+        // FORT_AVGDOWN(data2Coarse.dataPtr(),
+        //              AMREX_ARLIM(bx.loVect()), AMREX_ARLIM(bx.hiVect()),
+        //              &ncCoarse,
+        //              data2Fine[mfi].dataPtr(),
+        //              AMREX_ARLIM(data2Fine[mfi].loVect()),
+        //              AMREX_ARLIM(data2Fine[mfi].hiVect()),
+        //              cvolume[mfi].dataPtr(),
+        //              AMREX_ARLIM(cvolume[mfi].loVect()),
+        //              AMREX_ARLIM(cvolume[mfi].hiVect()),
+        //              fvolume[mfi].dataPtr(),
+        //              AMREX_ARLIM(fvolume[mfi].loVect()),
+        //              AMREX_ARLIM(fvolume[mfi].hiVect()),
+        //              bx.loVect(), bx.hiVect(),
+        //              refine_ratio.getVect());
 
 
-        // FORT_CV_AVGDOWN(data2Coarse.dataPtr(),
-        //                 AMREX_ARLIM(bx.loVect()), AMREX_ARLIM(bx.hiVect()),
-        //                 &ncCoarse,
-        //                 data2Fine[mfi].dataPtr(),
-        //                 AMREX_ARLIM(data2Fine[mfi].loVect()),
-        //                 AMREX_ARLIM(data2Fine[mfi].hiVect()),
-        //                 bx.loVect(), bx.hiVect(),
-        //                 refine_ratio.getVect());
+        FORT_CV_AVGDOWN(data2Coarse.dataPtr(),
+                        AMREX_ARLIM(bx.loVect()), AMREX_ARLIM(bx.hiVect()),
+                        &ncCoarse,
+                        data2Fine[mfi].dataPtr(),
+                        AMREX_ARLIM(data2Fine[mfi].loVect()),
+                        AMREX_ARLIM(data2Fine[mfi].hiVect()),
+                        bx.loVect(), bx.hiVect(),
+                        refine_ratio.getVect());
 
 
         //
@@ -335,7 +340,7 @@ getErrorNorms(Vector<Real>& a_norms, //one for each comp
 
         if (norm != 0)
         {
-            (*error[iLevel])[mfi].mult(cvolume  , 0, iComp, 1);
+            (*error[iLevel])[mfi].mult(cvolume[mfi]  , 0, iComp, 1);
         }
 
         if (iLevel<finestLevel)
